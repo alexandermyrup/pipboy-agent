@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PIP-BOY 4000 — Local Agent</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="scanlines"></div>
+    <div class="crt-vignette"></div>
+
+    <div class="pipboy-frame">
+        <header class="pipboy-header">
+            <div class="header-left">
+                <span class="pip-logo">PIP-BOY 4000</span>
+                <span class="pip-version">v1.0 LOCAL AGENT</span>
+            </div>
+            <div class="header-right">
+                <span class="model-indicator" id="modelIndicator">
+                    <span class="indicator-dot"></span>
+                    STANDBY
+                </span>
+                <button class="pip-btn" id="settingsBtn" title="System prompt settings">SYS</button>
+                <button class="pip-btn" id="clearBtn" title="Clear conversation">CLR</button>
+            </div>
+        </header>
+
+        <div class="pipboy-screen" id="chatScreen">
+            <div class="welcome-message">
+<pre class="ascii-art">╔══════════════════════════════════════════════╗
+║                                              ║
+║   PIP-BOY 4000 SURVIVAL ASSISTANT            ║
+║                                              ║
+║   NEURAL PROCESSOR: QWEN-3.5 35B A3B        ║
+║                                              ║
+║   SURVIVAL KNOWLEDGE .. ONLINE               ║
+║   FIRST AID ........... ONLINE               ║
+║   DISASTER RESPONSE ... ONLINE               ║
+║   PRACTICAL SKILLS .... ONLINE               ║
+║   STATUS .............. ALL SYSTEMS NOMINAL   ║
+║                                              ║
+╚══════════════════════════════════════════════╝</pre>
+                <p class="welcome-sub">// All processing is local. No internet required. You are not alone.</p>
+            </div>
+        </div>
+
+        <div class="pipboy-status" id="statusBar">
+            <div class="status-content">
+                <span class="status-text" id="statusText">READY</span>
+                <div class="progress-bar" id="progressBar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="pipboy-input">
+            <span class="input-prompt">&gt;</span>
+            <textarea
+                id="userInput"
+                placeholder="Enter query..."
+                rows="1"
+                autofocus
+            ></textarea>
+            <button class="pip-btn send-btn" id="sendBtn">SEND</button>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="settings-overlay" id="settingsOverlay">
+        <div class="settings-modal">
+            <div class="settings-header">
+                <span class="settings-title">SYSTEM PROMPT EDITOR</span>
+                <button class="pip-btn" id="settingsCloseBtn">ESC</button>
+            </div>
+            <div class="settings-body">
+                <textarea id="promptEditor" spellcheck="false"></textarea>
+            </div>
+            <div class="settings-footer">
+                <span class="settings-status" id="settingsStatus"></span>
+                <div class="settings-actions">
+                    <button class="pip-btn" id="promptResetBtn">RELOAD</button>
+                    <button class="pip-btn settings-save-btn" id="promptSaveBtn">SAVE</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
