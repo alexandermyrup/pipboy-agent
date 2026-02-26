@@ -183,6 +183,22 @@ body {
     color: var(--pip-bg);
 }
 
+/* ---- Think Toggle ---- */
+
+.think-btn {
+    color: var(--pip-green-dark);
+    border-color: var(--pip-green-dark);
+    opacity: 0.5;
+}
+
+.think-btn.active {
+    color: var(--pip-green);
+    border-color: var(--pip-green-dim);
+    opacity: 1;
+    text-shadow: 0 0 8px var(--pip-green-glow);
+    box-shadow: 0 0 8px rgba(48, 255, 110, 0.15), inset 0 0 6px rgba(48, 255, 110, 0.05);
+}
+
 /* ---- Chat Screen ---- */
 
 .pipboy-screen {

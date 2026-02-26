@@ -15,6 +15,15 @@ app = FastAPI()
 OLLAMA_URL = "http://localhost:11434"
 PROMPT_FILE = Path(__file__).parent / "system_prompt.txt"
 
+CLARIFY_INSTRUCTIONS = """\
+CLARIFICATION MODE (ACTIVE):
+Before answering, assess your certainty about what the user is really asking.
+- If your certainty is 80% or above: answer directly, no questions needed.
+- If below 80%: ask 1-2 focused clarifying questions first. Be specific — don't ask vague or obvious things.
+- Keep your questions short. Use a brief sentence explaining why you're asking, then the questions as a numbered list.
+- After the user answers, give your full response. Do not ask follow-up questions unless critical context is still missing.
+- NEVER ask clarifying questions for urgent or emergency situations. Answer immediately."""
+
 
 def load_system_prompt() -> str:
     """Load system prompt from file. Falls back to a minimal default."""
@@ -37,13 +46,14 @@ async def check_ollama() -> bool:
         return False
 
 
-async def stream_chat(model: str, messages: list[dict]):
+async def stream_chat(model: str, messages: list[dict], think: bool = True):
     """Stream a chat response from Ollama."""
+    payload = {"model": model, "messages": messages, "stream": True, "think": think}
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
         async with client.stream(
             "POST",
             f"{OLLAMA_URL}/api/chat",
-            json={"model": model, "messages": messages, "stream": True},
+            json=payload,
         ) as resp:
             async for line in resp.aiter_lines():
                 if line.strip():
@@ -85,6 +95,7 @@ async def chat(request: Request):
     """
     body = await request.json()
     user_message = body.get("message", "").strip()
+    think = body.get("think", True)
     if not user_message:
         return {"error": "Empty message"}
 
@@ -115,13 +126,17 @@ async def chat(request: Request):
         }) + "\n"
 
         # Build messages with system prompt (reload from file each request)
+        system_content = load_system_prompt()
+        if think and not is_code:
+            system_content += "\n\n" + CLARIFY_INSTRUCTIONS
+
         messages_with_system = [
-            {"role": "system", "content": load_system_prompt()},
+            {"role": "system", "content": system_content},
             *conversation_history,
         ]
 
         full_response = ""
-        async for chunk in stream_chat(model, messages_with_system):
+        async for chunk in stream_chat(model, messages_with_system, think=think):
             content = chunk.get("message", {}).get("content", "")
             if content:
                 full_response += content

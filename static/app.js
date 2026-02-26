@@ -13,6 +13,7 @@ const SPINNER_FRAMES = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
 let spinnerInterval = null;
 let spinnerIndex = 0;
 let isProcessing = false;
+let thinkMode = true;
 
 // --- Spinner ---
 function startSpinner(element) {
@@ -184,7 +185,7 @@ async function sendMessage() {
         const response = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text }),
+            body: JSON.stringify({ message: text, think: thinkMode }),
         });
 
         const reader = response.body.getReader();
@@ -308,6 +309,13 @@ userInput.addEventListener('keydown', (e) => {
 
 sendBtn.addEventListener('click', sendMessage);
 clearBtn.addEventListener('click', clearHistory);
+
+// --- Think Mode Toggle ---
+const thinkBtn = document.getElementById('thinkBtn');
+thinkBtn.addEventListener('click', () => {
+    thinkMode = !thinkMode;
+    thinkBtn.classList.toggle('active', thinkMode);
+});
 
 // --- Settings Modal ---
 const settingsBtn = document.getElementById('settingsBtn');
