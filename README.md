@@ -8,7 +8,7 @@ PIP-BOY 4000 answers any survival question with practical, actionable advice: fi
 
 - **Python 3.11+**
 - **Ollama** — local LLM runtime ([ollama.com](https://ollama.com))
-- At least one Ollama model installed (e.g., `ollama pull qwen3.5:35b-a3b`)
+- At least one Ollama model installed — browse available models at [ollama.com/library](https://ollama.com/library) (e.g., `ollama pull llama3.1` or `ollama pull qwen3.5`)
 
 ## Install
 

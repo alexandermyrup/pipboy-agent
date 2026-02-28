@@ -10,4 +10,5 @@ venv/
 .env
 .pytest_cache/
 .claude/
+HANDOVER.md
 conversations/
