@@ -3,8 +3,13 @@ FastAPI backend — handles chat requests, streaming, and safety verification ch
 """
 
 import json
+import platform
+import shutil
 import uuid
+import webbrowser
 from datetime import datetime, timezone
+from pathlib import Path
+
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -21,6 +26,15 @@ CONVERSATIONS_DIR.mkdir(exist_ok=True)
 
 # Model families that support the `think` parameter
 THINK_FAMILIES = {"qwen3", "qwen3.5"}
+
+# Curated models shown during guided setup
+RECOMMENDED_MODELS = [
+    {"name": "llama3.2:3b", "description": "Meta's compact model. Fast, good general knowledge.", "size": "2.0 GB"},
+    {"name": "gemma3:4b", "description": "Google's efficient model. Strong reasoning for its size.", "size": "3.3 GB"},
+    {"name": "mistral:7b", "description": "Mistral's flagship. Excellent all-round performance.", "size": "4.1 GB"},
+    {"name": "qwen3:8b", "description": "Alibaba's model with think mode. Great for analysis.", "size": "4.9 GB"},
+    {"name": "llama3.1:8b", "description": "Meta's larger model. Best quality among these options.", "size": "4.7 GB"},
+]
 
 CLARIFY_INSTRUCTIONS = """\
 CLARIFICATION MODE (ACTIVE):
@@ -126,6 +140,72 @@ async def check_ollama() -> bool:
             return resp.status_code == 200
     except Exception:
         return False
+
+
+def check_ollama_installation() -> bool:
+    """Check if Ollama is installed (macOS .app bundle or CLI binary)."""
+    if platform.system() == "Darwin" and Path("/Applications/Ollama.app").exists():
+        return True
+    return shutil.which("ollama") is not None
+
+
+# --- Setup endpoints ---
+
+@app.get("/api/setup/status")
+async def setup_status():
+    """Return install/running/models status for the guided setup flow."""
+    if not check_ollama_installation():
+        return {"status": "not_installed", "recommended_models": RECOMMENDED_MODELS}
+
+    if not await check_ollama():
+        return {"status": "not_running", "recommended_models": RECOMMENDED_MODELS}
+
+    # Ollama is running — check if any models exist
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(f"{get_ollama_url()}/api/tags", timeout=5)
+            data = resp.json()
+            models = data.get("models", [])
+    except Exception:
+        models = []
+
+    if not models:
+        return {"status": "no_models", "recommended_models": RECOMMENDED_MODELS}
+
+    return {"status": "ready", "recommended_models": RECOMMENDED_MODELS}
+
+
+@app.post("/api/setup/open-download")
+async def setup_open_download(request: Request):
+    """Open the Ollama download page in the user's browser."""
+    if err := require_client_header(request):
+        return err
+    webbrowser.open("https://ollama.com/download")
+    return {"status": "ok"}
+
+
+@app.post("/api/setup/pull")
+async def setup_pull(request: Request):
+    """Proxy Ollama's POST /api/pull, streaming progress lines."""
+    if err := require_client_header(request):
+        return err
+    body = await request.json()
+    model_name = body.get("name", "").strip()
+    if not model_name:
+        return JSONResponse({"error": "No model name provided"}, status_code=400)
+
+    async def pull_stream():
+        async with httpx.AsyncClient(timeout=httpx.Timeout(600.0)) as client:
+            async with client.stream(
+                "POST",
+                f"{get_ollama_url()}/api/pull",
+                json={"name": model_name},
+            ) as resp:
+                async for line in resp.aiter_lines():
+                    if line.strip():
+                        yield line + "\n"
+
+    return StreamingResponse(pull_stream(), media_type="application/x-ndjson")
 
 
 async def stream_chat(model: str, messages: list[dict], think: bool = True):

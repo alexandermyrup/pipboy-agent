@@ -143,3 +143,41 @@ class TestConversationEndpoints:
         )
         data = resp.json()
         assert "error" in data
+
+
+class TestSetupEndpoints:
+
+    def test_setup_status_returns_json(self, client):
+        resp = client.get("/api/setup/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "status" in data
+        assert data["status"] in ("not_installed", "not_running", "no_models", "ready")
+
+    def test_setup_status_includes_recommended_models(self, client):
+        resp = client.get("/api/setup/status")
+        data = resp.json()
+        assert "recommended_models" in data
+        models = data["recommended_models"]
+        assert len(models) > 0
+        for m in models:
+            assert "name" in m
+            assert "description" in m
+            assert "size" in m
+
+    def test_open_download_requires_header(self, client):
+        resp = client.post("/api/setup/open-download")
+        assert resp.status_code == 403
+
+    def test_pull_requires_header(self, client):
+        resp = client.post("/api/setup/pull", json={"name": "test:latest"})
+        assert resp.status_code == 403
+
+    def test_pull_empty_name(self, client):
+        resp = client.post(
+            "/api/setup/pull",
+            json={"name": ""},
+            headers=CLIENT_HEADER,
+        )
+        assert resp.status_code == 400
+        assert "error" in resp.json()

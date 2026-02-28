@@ -10,6 +10,90 @@
     <div class="scanlines"></div>
     <div class="crt-vignette"></div>
 
+    <!-- Setup: Ollama not installed -->
+    <div class="setup-overlay" id="setupInstallOverlay">
+        <div class="setup-modal">
+            <div class="setup-header">
+                <span class="setup-title">OLLAMA ENGINE NOT DETECTED</span>
+            </div>
+            <div class="setup-body">
+<pre class="ascii-art setup-ascii">
+  ╔═══════════════════════════════╗
+  ║  !! ENGINE NOT FOUND !!      ║
+  ║                               ║
+  ║  Ollama is required to run    ║
+  ║  local AI models.             ║
+  ║                               ║
+  ║  Download and install it to   ║
+  ║  get started.                 ║
+  ╚═══════════════════════════════╝
+</pre>
+                <p class="setup-desc">PIP-BOY 4000 needs Ollama to run AI models locally on your machine. It's free, open-source, and takes about a minute to install.</p>
+            </div>
+            <div class="setup-footer">
+                <button class="pip-btn setup-action-btn" id="setupDownloadOllamaBtn">DOWNLOAD OLLAMA</button>
+                <button class="pip-btn" id="setupInstallCheckBtn">CHECK AGAIN</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Setup: Ollama not running -->
+    <div class="setup-overlay" id="setupStartOverlay">
+        <div class="setup-modal">
+            <div class="setup-header">
+                <span class="setup-title">OLLAMA ENGINE OFFLINE</span>
+            </div>
+            <div class="setup-body">
+<pre class="ascii-art setup-ascii">
+  ╔═══════════════════════════════╗
+  ║  OLLAMA: OFFLINE              ║
+  ║                               ║
+  ║  The engine is installed but  ║
+  ║  not currently running.       ║
+  ║                               ║
+  ║  Open the Ollama app or run   ║
+  ║  "ollama serve" in terminal.  ║
+  ╚═══════════════════════════════╝
+</pre>
+                <p class="setup-desc">Ollama is installed but not running. Open <strong>Ollama.app</strong> from your Applications folder, or run <code>ollama serve</code> in a terminal.</p>
+            </div>
+            <div class="setup-footer">
+                <span class="setup-status" id="setupStartStatus"></span>
+                <button class="pip-btn" id="setupStartCheckBtn">CHECK AGAIN</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Setup: No models downloaded -->
+    <div class="setup-overlay" id="setupDownloadOverlay">
+        <div class="setup-modal setup-modal-wide">
+            <div class="setup-header">
+                <span class="setup-title">DOWNLOAD NEURAL PROCESSOR</span>
+            </div>
+            <div class="setup-body">
+                <p class="setup-desc">No AI models found. Pick a model to download — smaller models are faster, larger models are smarter.</p>
+                <div class="setup-model-list" id="setupModelList">
+                    <!-- Populated by JS -->
+                </div>
+                <div class="setup-custom-input-wrapper">
+                    <label class="setup-custom-label" for="setupCustomModel">Or enter a custom model name:</label>
+                    <input type="text" class="setup-custom-input" id="setupCustomModel" placeholder="e.g. phi3:mini" spellcheck="false">
+                </div>
+                <div class="setup-progress-wrapper" id="setupProgressWrapper" style="display:none;">
+                    <div class="setup-progress-status" id="setupProgressStatus">PREPARING DOWNLOAD...</div>
+                    <div class="setup-progress-bar">
+                        <div class="setup-progress-fill" id="setupProgressFill"></div>
+                    </div>
+                    <div class="setup-progress-detail" id="setupProgressDetail"></div>
+                </div>
+            </div>
+            <div class="setup-footer">
+                <span class="setup-status" id="setupDownloadStatus"></span>
+                <button class="pip-btn setup-action-btn" id="setupPullBtn" disabled>DOWNLOAD</button>
+            </div>
+        </div>
+    </div>
+
     <!-- First-launch model selection overlay -->
     <div class="model-select-overlay" id="modelSelectOverlay">
         <div class="model-select-modal">

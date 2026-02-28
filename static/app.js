@@ -605,30 +605,219 @@ promptEditor.addEventListener('keydown', (e) => {
     }
 });
 
+// --- Guided Setup Flow ---
+
+const setupOverlayIds = ['setupInstallOverlay', 'setupStartOverlay', 'setupDownloadOverlay'];
+
+function hideAllSetupScreens() {
+    for (const id of setupOverlayIds) {
+        document.getElementById(id).classList.remove('open');
+    }
+}
+
+function showSetupScreen(id) {
+    hideAllSetupScreens();
+    document.getElementById(id).classList.add('open');
+}
+
+async function checkSetupStatus() {
+    try {
+        const resp = await fetch('/api/setup/status');
+        return await resp.json();
+    } catch {
+        return { status: 'error', recommended_models: [] };
+    }
+}
+
+function populateRecommendedModels(models) {
+    const list = document.getElementById('setupModelList');
+    const pullBtn = document.getElementById('setupPullBtn');
+    const customInput = document.getElementById('setupCustomModel');
+    list.innerHTML = '';
+    let selectedModel = null;
+
+    for (const m of models) {
+        const item = document.createElement('div');
+        item.className = 'setup-model-item';
+        item.dataset.model = m.name;
+        item.innerHTML = `
+            <div class="setup-model-name">${m.name.toUpperCase()}</div>
+            <div class="setup-model-desc">${m.description}</div>
+            <div class="setup-model-size">${m.size}</div>
+        `;
+        item.addEventListener('click', () => {
+            list.querySelectorAll('.setup-model-item.selected').forEach(el => el.classList.remove('selected'));
+            item.classList.add('selected');
+            selectedModel = m.name;
+            customInput.value = '';
+            pullBtn.disabled = false;
+        });
+        list.appendChild(item);
+    }
+
+    // Custom input: typing deselects curated list
+    customInput.addEventListener('input', () => {
+        if (customInput.value.trim()) {
+            list.querySelectorAll('.setup-model-item.selected').forEach(el => el.classList.remove('selected'));
+            selectedModel = null;
+            pullBtn.disabled = false;
+        } else {
+            pullBtn.disabled = !selectedModel;
+        }
+    });
+
+    // Return getter for the currently chosen model name
+    return () => customInput.value.trim() || selectedModel;
+}
+
+async function pullModel(modelName) {
+    const progressWrapper = document.getElementById('setupProgressWrapper');
+    const progressStatus = document.getElementById('setupProgressStatus');
+    const progressFill = document.getElementById('setupProgressFill');
+    const progressDetail = document.getElementById('setupProgressDetail');
+    const pullBtn = document.getElementById('setupPullBtn');
+    const downloadStatus = document.getElementById('setupDownloadStatus');
+
+    progressWrapper.style.display = '';
+    pullBtn.disabled = true;
+    progressFill.style.width = '0%';
+    progressFill.classList.remove('indeterminate');
+    progressStatus.textContent = 'CONNECTING...';
+    progressDetail.textContent = '';
+    downloadStatus.textContent = '';
+
+    try {
+        const resp = await fetch('/api/setup/pull', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-PipBoy-Client': 'pipboy-4000' },
+            body: JSON.stringify({ name: modelName }),
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json();
+            downloadStatus.textContent = 'ERROR: ' + (err.error || 'Download failed');
+            pullBtn.disabled = false;
+            return false;
+        }
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n').filter(l => l.trim());
+
+            for (const line of lines) {
+                let data;
+                try { data = JSON.parse(line); } catch { continue; }
+
+                const status = data.status || '';
+                progressStatus.textContent = status.toUpperCase();
+
+                if (data.total && data.completed) {
+                    const pct = Math.round((data.completed / data.total) * 100);
+                    progressFill.classList.remove('indeterminate');
+                    progressFill.style.width = pct + '%';
+                    const completedMB = (data.completed / (1024 * 1024)).toFixed(0);
+                    const totalMB = (data.total / (1024 * 1024)).toFixed(0);
+                    progressDetail.textContent = `${completedMB} MB / ${totalMB} MB (${pct}%)`;
+                } else {
+                    // Manifest/verify phase — indeterminate
+                    progressFill.classList.add('indeterminate');
+                    progressFill.style.width = '';
+                    progressDetail.textContent = '';
+                }
+
+                if (data.error) {
+                    downloadStatus.textContent = 'ERROR: ' + data.error;
+                    pullBtn.disabled = false;
+                    return false;
+                }
+            }
+        }
+
+        progressStatus.textContent = 'DOWNLOAD COMPLETE';
+        progressFill.classList.remove('indeterminate');
+        progressFill.style.width = '100%';
+        return true;
+    } catch (err) {
+        downloadStatus.textContent = 'ERROR: ' + (err.message || 'Connection failed');
+        pullBtn.disabled = false;
+        return false;
+    }
+}
+
+async function proceedToApp() {
+    hideAllSetupScreens();
+    const { models, activeModel } = await loadModels();
+    if (!activeModel && models.length > 0) {
+        showModelSelectScreen(models);
+    }
+}
+
+async function runSetupFlow() {
+    const result = await checkSetupStatus();
+
+    switch (result.status) {
+        case 'not_installed':
+            showSetupScreen('setupInstallOverlay');
+            break;
+        case 'not_running':
+            showSetupScreen('setupStartOverlay');
+            break;
+        case 'no_models': {
+            showSetupScreen('setupDownloadOverlay');
+            const getModel = populateRecommendedModels(result.recommended_models || []);
+
+            document.getElementById('setupPullBtn').onclick = async () => {
+                const name = getModel();
+                if (!name) return;
+                const ok = await pullModel(name);
+                if (ok) {
+                    // Short pause so user sees "DOWNLOAD COMPLETE"
+                    await new Promise(r => setTimeout(r, 800));
+                    await proceedToApp();
+                }
+            };
+            break;
+        }
+        case 'ready':
+            await proceedToApp();
+            break;
+        default:
+            setStatus('error', '', 'Backend not responding');
+    }
+}
+
+// --- Setup button event listeners ---
+
+document.getElementById('setupDownloadOllamaBtn').addEventListener('click', async () => {
+    await fetch('/api/setup/open-download', {
+        method: 'POST',
+        headers: { 'X-PipBoy-Client': 'pipboy-4000' },
+    });
+});
+
+document.getElementById('setupInstallCheckBtn').addEventListener('click', () => {
+    runSetupFlow();
+});
+
+document.getElementById('setupStartCheckBtn').addEventListener('click', async () => {
+    const status = document.getElementById('setupStartStatus');
+    status.textContent = 'CHECKING...';
+    await runSetupFlow();
+    // If we're still on this screen, Ollama is still not running
+    if (document.getElementById('setupStartOverlay').classList.contains('open')) {
+        status.textContent = 'OLLAMA STILL NOT DETECTED';
+    }
+});
+
 // --- Initialization ---
 async function init() {
-    // Health check
-    try {
-        const resp = await fetch('/api/health');
-        const data = await resp.json();
-        if (data.status !== 'ok') {
-            setStatus('error', '', data.message || 'Ollama not available');
-            return;
-        }
-    } catch {
-        setStatus('error', '', 'Backend not responding');
-        return;
-    }
-
-    // Load models
-    const { models, activeModel } = await loadModels();
-
-    if (!activeModel && models.length > 0) {
-        // No model saved — show first-launch selection screen
-        showModelSelectScreen(models);
-    } else if (!activeModel && models.length === 0) {
-        setStatus('error', '', 'No Ollama models found. Run: ollama pull <model>');
-    }
+    await runSetupFlow();
 }
 
 init();
