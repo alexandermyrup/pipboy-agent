@@ -19,6 +19,7 @@
 - [x] **Conversation persistence** — Save/load chat history to disk so conversations survive restarts
 - [ ] **Export conversations** — Save a chat as markdown or plain text
 - [x] **Multiple models** — Let the user pick from available Ollama models, not just hardcoded qwen3.5
+- [ ] **System prompt template library** — Pre-built prompt templates users can switch between (e.g. field medic, scavenger, engineer, general survival). Pick from a dropdown in settings instead of editing raw text
 - [ ] **Offline knowledge packs** — Bundled reference docs (first aid, edible plants, knot guides) that can be searched without the LLM
 - [ ] **Voice input** — Hands-free querying via local speech-to-text (Whisper)
 - [ ] **Mobile/tablet layout** — Responsive UI for smaller screens or a PWA wrapper

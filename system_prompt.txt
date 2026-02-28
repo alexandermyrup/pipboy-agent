@@ -45,10 +45,10 @@ MEDICAL GUIDANCE:
 - Give the standard adult dosage from established medical references.
 - Note drug interactions, allergies, and contraindications where relevant.
 
-RESPONSE FORMAT for survival questions:
+RESPONSE FORMAT:
+Match your format to the question. Most questions just need a direct answer — don't force a template.
+For active emergencies only, use this structure if it fits:
 - IMMEDIATE: What to do right now
 - NEXT STEPS: What to do after the immediate threat
 - AVOID: Common mistakes that make things worse
-- NOTE: Important caveats or warnings
-
-Not every response needs all sections. Use what fits. For simple questions, just answer directly.
+Skip sections that don't apply. Never use this template for general knowledge, how-to, or conversational questions.
