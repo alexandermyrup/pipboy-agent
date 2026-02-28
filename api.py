@@ -8,12 +8,16 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from router import route, BASE_MODEL
+from router import route
 
 app = FastAPI()
 
 OLLAMA_URL = "http://localhost:11434"
 PROMPT_FILE = Path(__file__).parent / "system_prompt.txt"
+CONFIG_FILE = Path(__file__).parent / "config.json"
+
+# Model families that support the `think` parameter
+THINK_FAMILIES = {"qwen3", "qwen3.5"}
 
 CLARIFY_INSTRUCTIONS = """\
 CLARIFICATION MODE (ACTIVE):
@@ -25,12 +29,57 @@ Before answering, assess your certainty about what the user is really asking.
 - NEVER ask clarifying questions for urgent or emergency situations. Answer immediately."""
 
 
+# --- Active model state ---
+
+active_model: str | None = None
+
+
+def load_config() -> dict:
+    """Load persisted config from config.json."""
+    try:
+        return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_config(data: dict):
+    """Save config to config.json (merges with existing)."""
+    config = load_config()
+    config.update(data)
+    CONFIG_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+
+def get_active_model() -> str | None:
+    """Return the currently active model."""
+    global active_model
+    if active_model is None:
+        active_model = load_config().get("active_model")
+    return active_model
+
+
+def set_active_model(model: str):
+    """Set and persist the active model."""
+    global active_model
+    active_model = model
+    save_config({"active_model": model})
+
+
+def model_supports_think(model_name: str) -> bool:
+    """Check if a model supports the think parameter based on its family."""
+    name_lower = model_name.lower()
+    for family in THINK_FAMILIES:
+        if family in name_lower:
+            return True
+    return False
+
+
 def load_system_prompt() -> str:
     """Load system prompt from file. Falls back to a minimal default."""
     try:
         return PROMPT_FILE.read_text(encoding="utf-8").strip()
     except FileNotFoundError:
         return "You are PIP-BOY 4000, a post-apocalyptic survival assistant."
+
 
 # Conversation history (in-memory for now)
 conversation_history: list[dict] = []
@@ -48,7 +97,12 @@ async def check_ollama() -> bool:
 
 async def stream_chat(model: str, messages: list[dict], think: bool = True):
     """Stream a chat response from Ollama."""
-    payload = {"model": model, "messages": messages, "stream": True, "think": think}
+    payload = {"model": model, "messages": messages, "stream": True}
+
+    # Only include `think` for models that support it
+    if model_supports_think(model):
+        payload["think"] = think
+
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
         async with client.stream(
             "POST",
@@ -67,6 +121,62 @@ async def generate_full_response(model: str, messages: list[dict]) -> str:
         content = chunk.get("message", {}).get("content", "")
         full_text += content
     return full_text
+
+
+# --- Model endpoints ---
+
+@app.get("/api/models")
+async def list_models():
+    """List available Ollama models with metadata."""
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(f"{OLLAMA_URL}/api/tags", timeout=5)
+            data = resp.json()
+    except Exception as e:
+        return {"error": f"Cannot reach Ollama: {e}", "models": []}
+
+    current = get_active_model()
+    models = []
+    for m in data.get("models", []):
+        name = m.get("name", "")
+        details = m.get("details", {})
+        size_bytes = m.get("size", 0)
+        size_gb = round(size_bytes / (1024 ** 3), 1) if size_bytes else None
+
+        models.append({
+            "name": name,
+            "size_gb": size_gb,
+            "parameter_size": details.get("parameter_size", ""),
+            "family": details.get("family", ""),
+            "quantization": details.get("quantization_level", ""),
+            "supports_think": model_supports_think(name),
+        })
+
+    return {
+        "models": models,
+        "active_model": current,
+    }
+
+
+@app.get("/api/model")
+async def get_model():
+    """Return the currently active model."""
+    return {"active_model": get_active_model()}
+
+
+@app.post("/api/model")
+async def switch_model(request: Request):
+    """Switch the active model and persist to config."""
+    body = await request.json()
+    model = body.get("model", "").strip()
+    if not model:
+        return {"error": "No model specified"}
+    set_active_model(model)
+    return {
+        "status": "ok",
+        "active_model": model,
+        "supports_think": model_supports_think(model),
+    }
 
 
 @app.get("/api/health")
@@ -91,7 +201,7 @@ async def health():
 async def chat(request: Request):
     """
     Main chat endpoint. Routes to the right model,
-    and chains code review if it's a code query.
+    and chains safety review if it's an urgent query.
     """
     body = await request.json()
     user_message = body.get("message", "").strip()
@@ -99,9 +209,13 @@ async def chat(request: Request):
     if not user_message:
         return {"error": "Empty message"}
 
-    # Route the query
-    routing = route(user_message)
-    model = routing["model"]
+    # Get the active model
+    model = get_active_model()
+    if not model:
+        return {"error": "No model selected. Pick a model first."}
+
+    # Route the query (pass active model through)
+    routing = route(user_message, model)
     is_code = routing["is_code"]
     reason = routing["reason"]
 
@@ -146,12 +260,12 @@ async def chat(request: Request):
                     "stage": "generating",
                 }) + "\n"
 
-        # Stage 2: If code query, have base model review
+        # Stage 2: If urgent query, have model do a safety review
         if is_code:
             yield json.dumps({
                 "type": "status",
                 "stage": "reviewing",
-                "model": BASE_MODEL,
+                "model": model,
             }) + "\n"
 
             review_messages = [
@@ -172,7 +286,7 @@ async def chat(request: Request):
             ]
 
             review_text = ""
-            async for chunk in stream_chat(BASE_MODEL, review_messages):
+            async for chunk in stream_chat(model, review_messages):
                 content = chunk.get("message", {}).get("content", "")
                 if content:
                     review_text += content
@@ -183,7 +297,7 @@ async def chat(request: Request):
                     }) + "\n"
 
             # Store the combined response in history
-            combined = full_response + "\n\n---\n**Code Review:**\n" + review_text
+            combined = full_response + "\n\n---\n**Safety Review:**\n" + review_text
             conversation_history.append({"role": "assistant", "content": combined})
         else:
             # Store response in history

@@ -1,14 +1,8 @@
 """
 Router — classifies queries as urgent survival or general knowledge.
 Urgent queries get a faster, more structured response.
-All queries go to the same model.
+The model is passed in from the caller (api.py manages active model).
 """
-
-MODEL = "qwen3.5:35b-a3b"
-
-# Keep these for backward compatibility with api.py imports
-CODER_MODEL = MODEL
-BASE_MODEL = MODEL
 
 # Keywords that signal an urgent/active emergency
 URGENT_KEYWORDS = {
@@ -51,9 +45,13 @@ URGENT_PATTERNS = [
 ]
 
 
-def route(message: str) -> dict:
+def route(message: str, model: str) -> dict:
     """
     Classify the query as urgent survival or general knowledge.
+
+    Args:
+        message: The user's message text
+        model: The active model name (passed through to the result)
 
     Returns:
         dict with 'model', 'is_code' (repurposed as 'is_urgent'), and 'reason'
@@ -64,7 +62,7 @@ def route(message: str) -> dict:
     for pattern in URGENT_PATTERNS:
         if pattern in lower:
             return {
-                "model": MODEL,
+                "model": model,
                 "is_code": True,  # repurposed: True = urgent, triggers review pass
                 "reason": f"Urgent pattern: '{pattern}'",
             }
@@ -74,7 +72,7 @@ def route(message: str) -> dict:
     matches = words & URGENT_KEYWORDS
     if len(matches) >= 2:
         return {
-            "model": MODEL,
+            "model": model,
             "is_code": True,
             "reason": f"Urgent keywords: {matches}",
         }
@@ -89,14 +87,14 @@ def route(message: str) -> dict:
         }
         if keyword in strong_signals:
             return {
-                "model": MODEL,
+                "model": model,
                 "is_code": True,
                 "reason": f"Strong urgent keyword: '{keyword}'",
             }
 
     # Default: general knowledge query
     return {
-        "model": MODEL,
+        "model": model,
         "is_code": False,
         "reason": "General survival knowledge query",
     }

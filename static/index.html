@@ -10,6 +10,25 @@
     <div class="scanlines"></div>
     <div class="crt-vignette"></div>
 
+    <!-- First-launch model selection overlay -->
+    <div class="model-select-overlay" id="modelSelectOverlay">
+        <div class="model-select-modal">
+            <div class="model-select-header">
+                <span class="model-select-title">SELECT NEURAL PROCESSOR</span>
+            </div>
+            <div class="model-select-body">
+                <p class="model-select-desc">No model configured. Choose a model to initialize the system.</p>
+                <div class="model-select-list" id="modelSelectList">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+            <div class="model-select-footer">
+                <span class="model-select-status" id="modelSelectStatus">SCANNING AVAILABLE MODELS...</span>
+                <button class="pip-btn model-select-confirm" id="modelSelectConfirm" disabled>INITIALIZE</button>
+            </div>
+        </div>
+    </div>
+
     <div class="pipboy-frame">
         <header class="pipboy-header">
             <div class="header-left">
@@ -17,6 +36,9 @@
                 <span class="pip-version">v1.0 LOCAL AGENT</span>
             </div>
             <div class="header-right">
+                <select class="pip-select" id="modelSelect" title="Switch model">
+                    <option value="">LOADING...</option>
+                </select>
                 <span class="model-indicator" id="modelIndicator">
                     <span class="indicator-dot"></span>
                     STANDBY
@@ -33,7 +55,7 @@
 ║                                              ║
 ║   PIP-BOY 4000 SURVIVAL ASSISTANT            ║
 ║                                              ║
-║   NEURAL PROCESSOR: QWEN-3.5 35B A3B         ║
+║   NEURAL PROCESSOR: <span id="welcomeModel">INITIALIZING...          ║</span>
 ║                                              ║
 ║   SURVIVAL KNOWLEDGE .. ONLINE               ║
 ║   FIRST AID ........... ONLINE               ║

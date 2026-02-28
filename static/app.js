@@ -8,12 +8,30 @@ const modelIndicator = document.getElementById('modelIndicator');
 const statusText = document.getElementById('statusText');
 const progressBar = document.getElementById('progressBar');
 const progressFill = document.getElementById('progressFill');
+const modelSelect = document.getElementById('modelSelect');
+const thinkBtn = document.getElementById('thinkBtn');
+const welcomeModel = document.getElementById('welcomeModel');
 
 const SPINNER_FRAMES = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
 let spinnerInterval = null;
 let spinnerIndex = 0;
 let isProcessing = false;
 let thinkMode = true;
+let currentModelName = '';     // Display-friendly name (e.g. "QWEN3.5:35B-A3B")
+let currentSupportsThink = true;
+
+// --- Helpers ---
+
+function formatModelDisplay(name) {
+    // Turn "qwen3.5:35b-a3b" into "QWEN3.5:35B-A3B"
+    return name.toUpperCase();
+}
+
+function padModelSpan(name) {
+    // Pad model name to fill the remaining 25 chars in the ASCII box, plus closing ║
+    // The "║   NEURAL PROCESSOR: " prefix (21 chars) is in the HTML, so the span holds 25 chars + ║
+    return name.substring(0, 25).padEnd(25, ' ') + '║';
+}
 
 // --- Spinner ---
 function startSpinner(element) {
@@ -34,6 +52,7 @@ function stopSpinner() {
 // --- Status Updates ---
 function setStatus(stage, model = '', reason = '') {
     const dot = modelIndicator.querySelector('.indicator-dot');
+    const modelShort = currentModelName || 'UNKNOWN';
 
     switch (stage) {
         case 'routing':
@@ -48,7 +67,6 @@ function setStatus(stage, model = '', reason = '') {
 
         case 'generating':
             stopSpinner();
-            const modelShort = 'QWEN-3.5 35B';
             statusText.className = 'status-text generating';
             statusText.innerHTML = `<span class="spinner-char"></span> ${modelShort} [GENERATING...]`;
             startSpinner(statusText.querySelector('.spinner-char'));
@@ -59,9 +77,9 @@ function setStatus(stage, model = '', reason = '') {
         case 'reviewing':
             stopSpinner();
             statusText.className = 'status-text reviewing';
-            statusText.innerHTML = `<span class="spinner-char"></span> QWEN-3.5 35B [VERIFYING SAFETY...]`;
+            statusText.innerHTML = `<span class="spinner-char"></span> ${modelShort} [VERIFYING SAFETY...]`;
             startSpinner(statusText.querySelector('.spinner-char'));
-            modelIndicator.innerHTML = '<span class="indicator-dot active"></span> QWEN-3.5 35B';
+            modelIndicator.innerHTML = `<span class="indicator-dot active"></span> ${modelShort}`;
             break;
 
         case 'complete':
@@ -111,7 +129,7 @@ function createAssistantMessage(model, isCode) {
     const div = document.createElement('div');
     div.className = 'message message-assistant';
 
-    const modelName = 'QWEN-3.5 35B';
+    const modelName = currentModelName || 'UNKNOWN';
     const tag = isCode ? 'URGENT' : 'GENERAL';
 
     div.innerHTML = `
@@ -128,9 +146,10 @@ function createAssistantMessage(model, isCode) {
 }
 
 function addReviewSection(messageDiv) {
+    const modelName = currentModelName || 'UNKNOWN';
     const reviewDiv = document.createElement('div');
     reviewDiv.innerHTML = `
-        <div class="review-divider">SAFETY CHECK — QWEN-3.5 35B</div>
+        <div class="review-divider">SAFETY CHECK — ${modelName}</div>
         <div class="review-content" id="currentReview"></div>
     `;
     messageDiv.appendChild(reviewDiv);
@@ -180,6 +199,7 @@ async function sendMessage() {
     let currentStage = '';
     let responseText = '';
     let reviewText = '';
+    let cachedIsCode = false;  // Bug fix: cache is_code from routing event
 
     try {
         const response = await fetch('/api/chat', {
@@ -207,10 +227,15 @@ async function sendMessage() {
                 }
 
                 if (data.type === 'status') {
+                    // Cache is_code from routing stage (bug fix)
+                    if (data.stage === 'routing' && data.is_code !== undefined) {
+                        cachedIsCode = data.is_code;
+                    }
+
                     setStatus(data.stage, data.model || '', data.reason || '');
 
                     if (data.stage === 'generating' && !messageDiv) {
-                        messageDiv = createAssistantMessage(data.model, data.is_code);
+                        messageDiv = createAssistantMessage(data.model, cachedIsCode);
                         currentStage = 'generating';
                     }
 
@@ -293,6 +318,167 @@ async function clearHistory() {
     }
 }
 
+// --- Model Selection ---
+
+function updateThinkButton(supportsThink) {
+    currentSupportsThink = supportsThink;
+    if (supportsThink) {
+        thinkBtn.style.display = '';
+        // Restore active state
+        thinkBtn.classList.toggle('active', thinkMode);
+    } else {
+        thinkBtn.style.display = 'none';
+        // Force think off if model doesn't support it
+        thinkMode = false;
+    }
+}
+
+function updateWelcomeModel(displayName) {
+    if (welcomeModel) {
+        welcomeModel.textContent = padModelSpan(displayName);
+    }
+}
+
+async function loadModels() {
+    try {
+        const resp = await fetch('/api/models');
+        const data = await resp.json();
+
+        if (data.error) {
+            console.error('Model load error:', data.error);
+            return { models: [], activeModel: null };
+        }
+
+        const models = data.models || [];
+        const activeModel = data.active_model || null;
+
+        // Populate the header dropdown
+        modelSelect.innerHTML = '';
+        if (models.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'NO MODELS';
+            modelSelect.appendChild(opt);
+            return { models, activeModel };
+        }
+
+        for (const m of models) {
+            const opt = document.createElement('option');
+            opt.value = m.name;
+            let label = formatModelDisplay(m.name);
+            if (m.parameter_size) label += ` (${m.parameter_size})`;
+            opt.textContent = label;
+            if (m.name === activeModel) opt.selected = true;
+            modelSelect.appendChild(opt);
+        }
+
+        // If we have an active model, update the UI
+        if (activeModel) {
+            currentModelName = formatModelDisplay(activeModel);
+            const activeInfo = models.find(m => m.name === activeModel);
+            updateThinkButton(activeInfo?.supports_think ?? false);
+            updateWelcomeModel(currentModelName);
+        }
+
+        return { models, activeModel };
+    } catch (err) {
+        console.error('Failed to load models:', err);
+        return { models: [], activeModel: null };
+    }
+}
+
+async function switchModel(modelName) {
+    try {
+        const resp = await fetch('/api/model', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: modelName }),
+        });
+        const data = await resp.json();
+        if (data.status === 'ok') {
+            currentModelName = formatModelDisplay(data.active_model);
+            updateThinkButton(data.supports_think);
+            updateWelcomeModel(currentModelName);
+        }
+    } catch (err) {
+        console.error('Model switch error:', err);
+    }
+}
+
+// Header dropdown change
+modelSelect.addEventListener('change', () => {
+    const selected = modelSelect.value;
+    if (selected) {
+        switchModel(selected);
+    }
+});
+
+// --- First-launch model selection screen ---
+
+async function showModelSelectScreen(models) {
+    const overlay = document.getElementById('modelSelectOverlay');
+    const list = document.getElementById('modelSelectList');
+    const confirmBtn = document.getElementById('modelSelectConfirm');
+    const status = document.getElementById('modelSelectStatus');
+
+    overlay.classList.add('open');
+
+    if (models.length === 0) {
+        status.textContent = 'NO MODELS FOUND — Install models with: ollama pull <model>';
+        return;
+    }
+
+    status.textContent = `${models.length} MODEL(S) DETECTED`;
+    list.innerHTML = '';
+    let selectedModel = null;
+
+    for (const m of models) {
+        const item = document.createElement('div');
+        item.className = 'model-select-item';
+        item.dataset.model = m.name;
+
+        let meta = [];
+        if (m.parameter_size) meta.push(m.parameter_size);
+        if (m.family) meta.push(m.family);
+        if (m.quantization) meta.push(m.quantization);
+        if (m.size_gb) meta.push(`${m.size_gb} GB`);
+
+        item.innerHTML = `
+            <div class="model-select-name">${formatModelDisplay(m.name)}</div>
+            <div class="model-select-meta">${meta.join(' · ')}</div>
+        `;
+
+        item.addEventListener('click', () => {
+            // Deselect previous
+            list.querySelectorAll('.model-select-item.selected').forEach(el => el.classList.remove('selected'));
+            item.classList.add('selected');
+            selectedModel = m.name;
+            confirmBtn.disabled = false;
+        });
+
+        list.appendChild(item);
+    }
+
+    // If only one model, auto-select it
+    if (models.length === 1) {
+        list.querySelector('.model-select-item').classList.add('selected');
+        selectedModel = models[0].name;
+        confirmBtn.disabled = false;
+    }
+
+    confirmBtn.addEventListener('click', async () => {
+        if (!selectedModel) return;
+        confirmBtn.disabled = true;
+        status.textContent = 'INITIALIZING...';
+        await switchModel(selectedModel);
+
+        // Update the dropdown selection
+        modelSelect.value = selectedModel;
+
+        overlay.classList.remove('open');
+    });
+}
+
 // --- Auto-resize textarea ---
 userInput.addEventListener('input', () => {
     userInput.style.height = 'auto';
@@ -311,8 +497,8 @@ sendBtn.addEventListener('click', sendMessage);
 clearBtn.addEventListener('click', clearHistory);
 
 // --- Think Mode Toggle ---
-const thinkBtn = document.getElementById('thinkBtn');
 thinkBtn.addEventListener('click', () => {
+    if (!currentSupportsThink) return;
     thinkMode = !thinkMode;
     thinkBtn.classList.toggle('active', thinkMode);
 });
@@ -419,17 +605,30 @@ promptEditor.addEventListener('keydown', (e) => {
     }
 });
 
-// --- Health check on load ---
-async function checkHealth() {
+// --- Initialization ---
+async function init() {
+    // Health check
     try {
         const resp = await fetch('/api/health');
         const data = await resp.json();
         if (data.status !== 'ok') {
             setStatus('error', '', data.message || 'Ollama not available');
+            return;
         }
     } catch {
         setStatus('error', '', 'Backend not responding');
+        return;
+    }
+
+    // Load models
+    const { models, activeModel } = await loadModels();
+
+    if (!activeModel && models.length > 0) {
+        // No model saved — show first-launch selection screen
+        showModelSelectScreen(models);
+    } else if (!activeModel && models.length === 0) {
+        setStatus('error', '', 'No Ollama models found. Run: ollama pull <model>');
     }
 }
 
-checkHealth();
+init();
