@@ -6,17 +6,17 @@ import json
 import uuid
 from datetime import datetime, timezone
 import httpx
-from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from router import route
+from paths import get_bundle_dir, get_data_dir
 
 app = FastAPI()
 
-PROMPT_FILE = Path(__file__).parent / "system_prompt.txt"
-CONFIG_FILE = Path(__file__).parent / "config.json"
-CONVERSATIONS_DIR = Path(__file__).parent / "conversations"
+PROMPT_FILE = get_data_dir() / "system_prompt.txt"
+CONFIG_FILE = get_data_dir() / "config.json"
+CONVERSATIONS_DIR = get_data_dir() / "conversations"
 CONVERSATIONS_DIR.mkdir(exist_ok=True)
 
 # Model families that support the `think` parameter
@@ -436,4 +436,4 @@ async def load_conversation(request: Request):
 
 
 # Serve static files (HTML/CSS/JS)
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+app.mount("/", StaticFiles(directory=str(get_bundle_dir() / "static"), html=True), name="static")

@@ -11,12 +11,12 @@ import time
 import uvicorn
 import webview
 import httpx
-from pathlib import Path
+from paths import get_bundle_dir, get_data_dir
 
-# Ensure we're running from the script's directory
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+# Ensure we're running from the bundle/source directory
+os.chdir(str(get_bundle_dir()))
 
-CONFIG_FILE = Path(__file__).parent / "config.json"
+CONFIG_FILE = get_data_dir() / "config.json"
 
 
 def _load_config() -> dict:
