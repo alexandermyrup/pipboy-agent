@@ -1,3 +1,6 @@
 {
-  "active_model": "qwen3.5:35b-a3b"
+  "active_model": null,
+  "ollama_url": "http://localhost:11434",
+  "app_host": "127.0.0.1",
+  "app_port": 8042
 }

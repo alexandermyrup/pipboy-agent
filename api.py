@@ -3,18 +3,21 @@ FastAPI backend — handles chat requests, streaming, and safety verification ch
 """
 
 import json
+import uuid
+from datetime import datetime, timezone
 import httpx
 from pathlib import Path
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from router import route
 
 app = FastAPI()
 
-OLLAMA_URL = "http://localhost:11434"
 PROMPT_FILE = Path(__file__).parent / "system_prompt.txt"
 CONFIG_FILE = Path(__file__).parent / "config.json"
+CONVERSATIONS_DIR = Path(__file__).parent / "conversations"
+CONVERSATIONS_DIR.mkdir(exist_ok=True)
 
 # Model families that support the `think` parameter
 THINK_FAMILIES = {"qwen3", "qwen3.5"}
@@ -40,6 +43,21 @@ def load_config() -> dict:
         return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
+
+
+def get_ollama_url() -> str:
+    """Return Ollama base URL from config (with fallback default)."""
+    return load_config().get("ollama_url", "http://localhost:11434")
+
+
+def require_client_header(request: Request) -> JSONResponse | None:
+    """Verify the X-PipBoy-Client header (and optional api_key). Returns error response or None."""
+    if request.headers.get("X-PipBoy-Client") != "pipboy-4000":
+        return JSONResponse({"error": "Missing or invalid client header"}, status_code=403)
+    api_key = load_config().get("api_key")
+    if api_key and request.headers.get("X-PipBoy-Key") != api_key:
+        return JSONResponse({"error": "Invalid API key"}, status_code=403)
+    return None
 
 
 def save_config(data: dict):
@@ -81,15 +99,30 @@ def load_system_prompt() -> str:
         return "You are PIP-BOY 4000, a post-apocalyptic survival assistant."
 
 
-# Conversation history (in-memory for now)
+# Conversation history
 conversation_history: list[dict] = []
+session_id: str = uuid.uuid4().hex[:12]
+
+
+def save_conversation():
+    """Persist current conversation to a JSON file."""
+    if not conversation_history:
+        return
+    filepath = CONVERSATIONS_DIR / f"{session_id}.json"
+    data = {
+        "session_id": session_id,
+        "model": get_active_model(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "messages": conversation_history[:],
+    }
+    filepath.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 async def check_ollama() -> bool:
     """Check if Ollama is running."""
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{OLLAMA_URL}/api/tags", timeout=5)
+            resp = await client.get(f"{get_ollama_url()}/api/tags", timeout=5)
             return resp.status_code == 200
     except Exception:
         return False
@@ -106,7 +139,7 @@ async def stream_chat(model: str, messages: list[dict], think: bool = True):
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
         async with client.stream(
             "POST",
-            f"{OLLAMA_URL}/api/chat",
+            f"{get_ollama_url()}/api/chat",
             json=payload,
         ) as resp:
             async for line in resp.aiter_lines():
@@ -130,7 +163,7 @@ async def list_models():
     """List available Ollama models with metadata."""
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{OLLAMA_URL}/api/tags", timeout=5)
+            resp = await client.get(f"{get_ollama_url()}/api/tags", timeout=5)
             data = resp.json()
     except Exception as e:
         return {"error": f"Cannot reach Ollama: {e}", "models": []}
@@ -167,6 +200,8 @@ async def get_model():
 @app.post("/api/model")
 async def switch_model(request: Request):
     """Switch the active model and persist to config."""
+    if err := require_client_header(request):
+        return err
     body = await request.json()
     model = body.get("model", "").strip()
     if not model:
@@ -189,7 +224,7 @@ async def health():
     # Check available models
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{OLLAMA_URL}/api/tags", timeout=5)
+            resp = await client.get(f"{get_ollama_url()}/api/tags", timeout=5)
             data = resp.json()
             models = [m["name"] for m in data.get("models", [])]
             return {"status": "ok", "models": models}
@@ -203,6 +238,8 @@ async def chat(request: Request):
     Main chat endpoint. Routes to the right model,
     and chains safety review if it's an urgent query.
     """
+    if err := require_client_header(request):
+        return err
     body = await request.json()
     user_message = body.get("message", "").strip()
     think = body.get("think", True)
@@ -216,7 +253,7 @@ async def chat(request: Request):
 
     # Route the query (pass active model through)
     routing = route(user_message, model)
-    is_code = routing["is_code"]
+    is_urgent = routing["is_urgent"]
     reason = routing["reason"]
 
     # Add user message to history
@@ -228,7 +265,7 @@ async def chat(request: Request):
             "type": "status",
             "stage": "routing",
             "model": model,
-            "is_code": is_code,
+            "is_urgent": is_urgent,
             "reason": reason,
         }) + "\n"
 
@@ -241,7 +278,7 @@ async def chat(request: Request):
 
         # Build messages with system prompt (reload from file each request)
         system_content = load_system_prompt()
-        if think and not is_code:
+        if think and not is_urgent:
             system_content += "\n\n" + CLARIFY_INSTRUCTIONS
 
         messages_with_system = [
@@ -261,7 +298,7 @@ async def chat(request: Request):
                 }) + "\n"
 
         # Stage 2: If urgent query, have model do a safety review
-        if is_code:
+        if is_urgent:
             yield json.dumps({
                 "type": "status",
                 "stage": "reviewing",
@@ -303,6 +340,9 @@ async def chat(request: Request):
             # Store response in history
             conversation_history.append({"role": "assistant", "content": full_response})
 
+        # Auto-save conversation to disk
+        save_conversation()
+
         # Done
         yield json.dumps({"type": "status", "stage": "complete"}) + "\n"
 
@@ -310,9 +350,14 @@ async def chat(request: Request):
 
 
 @app.post("/api/clear")
-async def clear_history():
-    """Clear conversation history."""
+async def clear_history(request: Request):
+    """Save current conversation, then clear history and start a new session."""
+    global session_id
+    if err := require_client_header(request):
+        return err
+    save_conversation()
     conversation_history.clear()
+    session_id = uuid.uuid4().hex[:12]
     return {"status": "ok"}
 
 
@@ -325,12 +370,69 @@ async def get_prompt():
 @app.post("/api/prompt")
 async def save_prompt(request: Request):
     """Save a new system prompt to file."""
+    if err := require_client_header(request):
+        return err
     body = await request.json()
     new_prompt = body.get("prompt", "").strip()
     if not new_prompt:
         return {"error": "Prompt cannot be empty"}
     PROMPT_FILE.write_text(new_prompt, encoding="utf-8")
     return {"status": "ok", "length": len(new_prompt)}
+
+
+# --- Conversation persistence endpoints ---
+
+@app.get("/api/conversations")
+async def list_conversations():
+    """List saved conversations, newest first."""
+    conversations = []
+    for f in sorted(CONVERSATIONS_DIR.glob("*.json"), reverse=True):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            msg_count = len(data.get("messages", []))
+            first_msg = ""
+            for m in data.get("messages", []):
+                if m.get("role") == "user":
+                    first_msg = m["content"][:80]
+                    break
+            conversations.append({
+                "session_id": data.get("session_id", f.stem),
+                "model": data.get("model"),
+                "updated_at": data.get("updated_at"),
+                "message_count": msg_count,
+                "preview": first_msg,
+            })
+        except (json.JSONDecodeError, KeyError):
+            continue
+    return {"conversations": conversations}
+
+
+@app.post("/api/conversations/load")
+async def load_conversation(request: Request):
+    """Load a saved conversation by session ID."""
+    global session_id
+    if err := require_client_header(request):
+        return err
+    body = await request.json()
+    target_id = body.get("session_id", "").strip()
+    if not target_id:
+        return {"error": "No session_id provided"}
+
+    filepath = CONVERSATIONS_DIR / f"{target_id}.json"
+    if not filepath.exists():
+        return {"error": "Conversation not found"}
+
+    try:
+        data = json.loads(filepath.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"error": "Corrupted conversation file"}
+
+    # Save current conversation before switching
+    save_conversation()
+    conversation_history.clear()
+    conversation_history.extend(data.get("messages", []))
+    session_id = target_id
+    return {"status": "ok", "message_count": len(conversation_history)}
 
 
 # Serve static files (HTML/CSS/JS)

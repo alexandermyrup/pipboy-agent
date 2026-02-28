@@ -54,7 +54,7 @@ def route(message: str, model: str) -> dict:
         model: The active model name (passed through to the result)
 
     Returns:
-        dict with 'model', 'is_code' (repurposed as 'is_urgent'), and 'reason'
+        dict with 'model', 'is_urgent', and 'reason'
     """
     lower = message.lower().strip()
 
@@ -63,7 +63,7 @@ def route(message: str, model: str) -> dict:
         if pattern in lower:
             return {
                 "model": model,
-                "is_code": True,  # repurposed: True = urgent, triggers review pass
+                "is_urgent": True,
                 "reason": f"Urgent pattern: '{pattern}'",
             }
 
@@ -73,7 +73,7 @@ def route(message: str, model: str) -> dict:
     if len(matches) >= 2:
         return {
             "model": model,
-            "is_code": True,
+            "is_urgent": True,
             "reason": f"Urgent keywords: {matches}",
         }
 
@@ -88,13 +88,13 @@ def route(message: str, model: str) -> dict:
         if keyword in strong_signals:
             return {
                 "model": model,
-                "is_code": True,
+                "is_urgent": True,
                 "reason": f"Strong urgent keyword: '{keyword}'",
             }
 
     # Default: general knowledge query
     return {
         "model": model,
-        "is_code": False,
+        "is_urgent": False,
         "reason": "General survival knowledge query",
     }

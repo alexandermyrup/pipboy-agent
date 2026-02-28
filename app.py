@@ -1,8 +1,9 @@
 """
 PIP-BOY 4000 — Main entry point.
-Launches FastAPI backend in a background thread and opens a native macOS window.
+Launches FastAPI backend in a background thread and opens a native desktop window.
 """
 
+import json
 import os
 import sys
 import threading
@@ -10,12 +11,24 @@ import time
 import uvicorn
 import webview
 import httpx
+from pathlib import Path
 
 # Ensure we're running from the script's directory
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-HOST = "127.0.0.1"
-PORT = 8042  # Vault-Tec approved port
+CONFIG_FILE = Path(__file__).parent / "config.json"
+
+
+def _load_config() -> dict:
+    try:
+        return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+_cfg = _load_config()
+HOST = _cfg.get("app_host", "127.0.0.1")
+PORT = _cfg.get("app_port", 8042)
 
 
 def start_server():
@@ -50,7 +63,21 @@ def main():
 
     print("✓ PIP-BOY 4000 online. Opening terminal...")
 
-    # Launch native macOS window
+    # Check for GTK3 on Linux (pywebview requires it)
+    if sys.platform.startswith("linux"):
+        try:
+            import gi
+            gi.require_version("Gtk", "3.0")
+        except (ImportError, ValueError):
+            print(
+                "✗ GTK3 not found. pywebview needs GTK3 + WebKit2 on Linux.\n"
+                "  Debian/Ubuntu: sudo apt install python3-gi python3-gi-cairo "
+                "gir1.2-gtk-3.0 gir1.2-webkit2-4.1\n"
+                "  Fedora: sudo dnf install python3-gobject gtk3 webkit2gtk4.1"
+            )
+            sys.exit(1)
+
+    # Launch native desktop window
     window = webview.create_window(
         title="PIP-BOY 4000",
         url=f"http://{HOST}:{PORT}",

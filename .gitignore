@@ -7,3 +7,7 @@ dist/
 build/
 .venv/
 venv/
+.env
+.pytest_cache/
+.claude/
+conversations/

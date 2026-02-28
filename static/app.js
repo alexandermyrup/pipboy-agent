@@ -125,12 +125,12 @@ function addUserMessage(text) {
     scrollToBottom();
 }
 
-function createAssistantMessage(model, isCode) {
+function createAssistantMessage(model, isUrgent) {
     const div = document.createElement('div');
     div.className = 'message message-assistant';
 
     const modelName = currentModelName || 'UNKNOWN';
-    const tag = isCode ? 'URGENT' : 'GENERAL';
+    const tag = isUrgent ? 'URGENT' : 'GENERAL';
 
     div.innerHTML = `
         <div class="message-label">
@@ -199,12 +199,12 @@ async function sendMessage() {
     let currentStage = '';
     let responseText = '';
     let reviewText = '';
-    let cachedIsCode = false;  // Bug fix: cache is_code from routing event
+    let cachedIsUrgent = false;  // Cache is_urgent from routing event
 
     try {
         const response = await fetch('/api/chat', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-PipBoy-Client': 'pipboy-4000' },
             body: JSON.stringify({ message: text, think: thinkMode }),
         });
 
@@ -227,15 +227,15 @@ async function sendMessage() {
                 }
 
                 if (data.type === 'status') {
-                    // Cache is_code from routing stage (bug fix)
-                    if (data.stage === 'routing' && data.is_code !== undefined) {
-                        cachedIsCode = data.is_code;
+                    // Cache is_urgent from routing stage
+                    if (data.stage === 'routing' && data.is_urgent !== undefined) {
+                        cachedIsUrgent = data.is_urgent;
                     }
 
                     setStatus(data.stage, data.model || '', data.reason || '');
 
                     if (data.stage === 'generating' && !messageDiv) {
-                        messageDiv = createAssistantMessage(data.model, cachedIsCode);
+                        messageDiv = createAssistantMessage(data.model, cachedIsUrgent);
                         currentStage = 'generating';
                     }
 
@@ -306,7 +306,7 @@ async function sendMessage() {
 // --- Clear History ---
 async function clearHistory() {
     try {
-        await fetch('/api/clear', { method: 'POST' });
+        await fetch('/api/clear', { method: 'POST', headers: { 'X-PipBoy-Client': 'pipboy-4000' } });
         // Keep only the welcome message
         const welcome = chatScreen.querySelector('.welcome-message');
         chatScreen.innerHTML = '';
@@ -391,7 +391,7 @@ async function switchModel(modelName) {
     try {
         const resp = await fetch('/api/model', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-PipBoy-Client': 'pipboy-4000' },
             body: JSON.stringify({ model: modelName }),
         });
         const data = await resp.json();
@@ -545,7 +545,7 @@ async function savePrompt() {
     try {
         const resp = await fetch('/api/prompt', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-PipBoy-Client': 'pipboy-4000' },
             body: JSON.stringify({ prompt: text }),
         });
         const data = await resp.json();

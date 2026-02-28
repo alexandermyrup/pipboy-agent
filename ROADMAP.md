@@ -16,9 +16,9 @@
 
 ## Features
 
-- [ ] **Conversation persistence** — Save/load chat history to disk so conversations survive restarts
+- [x] **Conversation persistence** — Save/load chat history to disk so conversations survive restarts
 - [ ] **Export conversations** — Save a chat as markdown or plain text
-- [ ] **Multiple models** — Let the user pick from available Ollama models, not just hardcoded qwen3.5
+- [x] **Multiple models** — Let the user pick from available Ollama models, not just hardcoded qwen3.5
 - [ ] **Offline knowledge packs** — Bundled reference docs (first aid, edible plants, knot guides) that can be searched without the LLM
 - [ ] **Voice input** — Hands-free querying via local speech-to-text (Whisper)
 - [ ] **Mobile/tablet layout** — Responsive UI for smaller screens or a PWA wrapper
